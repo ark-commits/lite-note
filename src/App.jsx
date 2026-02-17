@@ -138,6 +138,11 @@ export default function App() {
   }
 
   const handleSelectNote = (noteId) => {
+    if (noteId === activeNoteId || noteId === activeNoteIdRef.current) {
+      setIsMobileNotesOpen(false)
+      return
+    }
+
     flushPendingCommit()
     setActiveNoteId(noteId)
     activeNoteIdRef.current = noteId
