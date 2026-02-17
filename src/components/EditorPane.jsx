@@ -1,8 +1,9 @@
-export default function EditorPane({ value, onChange, disabled = false }) {
+export default function EditorPane({ value, onChange, disabled = false, isSyncing = false }) {
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
-      <div className="border-b border-slate-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
-        Markdown Editor
+      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+        <span>Markdown Editor</span>
+        <span>{isSyncing ? 'Syncing...' : 'Saved'}</span>
       </div>
       <textarea
         value={value}

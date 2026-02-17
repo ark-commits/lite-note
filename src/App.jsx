@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import EditorPane from './components/EditorPane'
 import NotesSidebar from './components/NotesSidebar'
 import PreviewPane from './components/PreviewPane'
@@ -106,14 +106,29 @@ const readStoredActiveNoteId = (notes) => {
 }
 
 export default function App() {
-  const [notes, setNotes] = useState(readStoredNotes)
-  const [activeNoteId, setActiveNoteId] = useState(() => readStoredActiveNoteId(notes))
+  const commitDelayMs = 250
+  const [notes, setNotes] = useState(() => [
+    {
+      id: 'note-1',
+      title: 'Lite Note',
+      emoji: '📝',
+      content: starterMarkdown,
+      createdAt: Date.now(),
+    },
+  ])
+  const [activeNoteId, setActiveNoteId] = useState('note-1')
   const [activeMobileTab, setActiveMobileTab] = useState('edit')
   const [isCreatingNote, setIsCreatingNote] = useState(false)
   const [newNoteTitle, setNewNoteTitle] = useState('')
   const [newNoteEmoji, setNewNoteEmoji] = useState('📝')
   const [isMobileNotesOpen, setIsMobileNotesOpen] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [draftContent, setDraftContent] = useState(starterMarkdown)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const pendingCommitTimerRef = useRef(null)
+  const pendingCommitNoteIdRef = useRef(null)
+  const pendingCommitValueRef = useRef(null)
+  const activeNoteIdRef = useRef('note-1')
 
   const activeNote = useMemo(
     () => notes.find((note) => note.id === activeNoteId) ?? notes[0] ?? null,
@@ -126,29 +141,56 @@ export default function App() {
     }
     const hasActive = notes.some((note) => note.id === activeNoteId)
     if (!hasActive) {
-      setActiveNoteId(notes[0].id)
+      const nextActiveNoteId = notes[0].id
+      setActiveNoteId(nextActiveNoteId)
+      activeNoteIdRef.current = nextActiveNoteId
     }
   }, [notes, activeNoteId])
 
-  useEffect(() => {
-    if (typeof window === 'undefined') {
+  const commitDraftToNote = (noteId, value) => {
+    setNotes((previousNotes) =>
+      previousNotes.map((note) => (note.id === noteId ? { ...note, content: value } : note)),
+    )
+    setIsSyncing(false)
+  }
+
+  const flushPendingCommit = () => {
+    if (!pendingCommitTimerRef.current) {
       return
     }
 
-    try {
-      window.localStorage.setItem(STORAGE_KEYS.notes, JSON.stringify(notes))
-    } catch {}
-  }, [notes])
+    clearTimeout(pendingCommitTimerRef.current)
+    pendingCommitTimerRef.current = null
 
-  useEffect(() => {
-    if (typeof window === 'undefined' || !activeNoteId) {
+    const noteIdToUpdate = pendingCommitNoteIdRef.current
+    const valueToCommit = pendingCommitValueRef.current
+    pendingCommitNoteIdRef.current = null
+    pendingCommitValueRef.current = null
+
+    if (noteIdToUpdate === null || valueToCommit === null) {
+      setIsSyncing(false)
       return
     }
 
-    try {
-      window.localStorage.setItem(STORAGE_KEYS.activeNoteId, activeNoteId)
-    } catch {}
-  }, [activeNoteId])
+    commitDraftToNote(noteIdToUpdate, valueToCommit)
+  }
+
+  useEffect(() => {
+    flushPendingCommit()
+    setDraftContent(activeNote?.content ?? '')
+  }, [activeNote?.id])
+
+  useEffect(
+    () => () => {
+      if (pendingCommitTimerRef.current) {
+        clearTimeout(pendingCommitTimerRef.current)
+      }
+      pendingCommitTimerRef.current = null
+      pendingCommitNoteIdRef.current = null
+      pendingCommitValueRef.current = null
+    },
+    [],
+  )
 
   const mobileTabClass = useMemo(
     () =>
@@ -164,17 +206,37 @@ export default function App() {
   }
 
   const handleSelectNote = (noteId) => {
+    if (noteId === activeNoteId || noteId === activeNoteIdRef.current) {
+      setIsMobileNotesOpen(false)
+      return
+    }
+
+    flushPendingCommit()
     setActiveNoteId(noteId)
+    activeNoteIdRef.current = noteId
+    const selectedNote = notes.find((note) => note.id === noteId)
+    setDraftContent(selectedNote?.content ?? '')
     setIsMobileNotesOpen(false)
   }
 
   const handleChangeContent = (value) => {
-    if (!activeNote) {
-      return
+    setDraftContent(value)
+    setIsSyncing(true)
+
+    if (pendingCommitTimerRef.current) {
+      clearTimeout(pendingCommitTimerRef.current)
     }
-    setNotes((previousNotes) =>
-      previousNotes.map((note) => (note.id === activeNote.id ? { ...note, content: value } : note)),
-    )
+
+    const noteIdToUpdate = activeNoteIdRef.current
+    pendingCommitNoteIdRef.current = noteIdToUpdate
+    pendingCommitValueRef.current = value
+
+    pendingCommitTimerRef.current = setTimeout(() => {
+      commitDraftToNote(noteIdToUpdate, value)
+      pendingCommitTimerRef.current = null
+      pendingCommitNoteIdRef.current = null
+      pendingCommitValueRef.current = null
+    }, commitDelayMs)
   }
 
   const handleConfirmCreateNote = () => {
@@ -182,6 +244,8 @@ export default function App() {
     if (!trimmedTitle) {
       return
     }
+
+    flushPendingCommit()
 
     const createdNote = {
       id: createNoteId(),
@@ -193,6 +257,8 @@ export default function App() {
 
     setNotes((previousNotes) => [...previousNotes, createdNote])
     setActiveNoteId(createdNote.id)
+    activeNoteIdRef.current = createdNote.id
+    setDraftContent(createdNote.content)
     setActiveMobileTab('edit')
     setNewNoteTitle('')
     setNewNoteEmoji('📝')
@@ -274,10 +340,15 @@ export default function App() {
 
             <section className="grid min-h-0 flex-1 gap-4 md:grid-cols-2">
               <div className={activeMobileTab === 'preview' ? 'hidden md:block' : ''}>
-                <EditorPane value={activeNote?.content ?? ''} onChange={handleChangeContent} disabled={!activeNote} />
+                <EditorPane
+                  value={draftContent}
+                  onChange={handleChangeContent}
+                  disabled={!activeNote}
+                  isSyncing={isSyncing}
+                />
               </div>
               <div className={activeMobileTab === 'edit' ? 'hidden md:block' : ''}>
-                <PreviewPane content={activeNote?.content ?? ''} />
+                <PreviewPane content={draftContent} />
               </div>
             </section>
           </div>
