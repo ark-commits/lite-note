@@ -107,33 +107,69 @@ const readStoredActiveNoteId = (notes) => {
 
 export default function App() {
   const commitDelayMs = 250
-  const [notes, setNotes] = useState(() => [
-    {
-      id: 'note-1',
-      title: 'Lite Note',
-      emoji: '📝',
-      content: starterMarkdown,
-      createdAt: Date.now(),
-    },
-  ])
-  const [activeNoteId, setActiveNoteId] = useState('note-1')
+  const [notes, setNotes] = useState(readStoredNotes)
+  const [activeNoteId, setActiveNoteId] = useState(() => readStoredActiveNoteId(notes))
   const [activeMobileTab, setActiveMobileTab] = useState('edit')
   const [isCreatingNote, setIsCreatingNote] = useState(false)
   const [newNoteTitle, setNewNoteTitle] = useState('')
   const [newNoteEmoji, setNewNoteEmoji] = useState('📝')
   const [isMobileNotesOpen, setIsMobileNotesOpen] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
-  const [draftContent, setDraftContent] = useState(starterMarkdown)
+  const [draftContent, setDraftContent] = useState(
+    () => notes.find((note) => note.id === activeNoteId)?.content ?? notes[0]?.content ?? '',
+  )
   const [isSyncing, setIsSyncing] = useState(false)
+  const [storageErrors, setStorageErrors] = useState({
+    notes: '',
+    activeNoteId: '',
+  })
+  const [saveStatus, setSaveStatus] = useState('idle')
   const pendingCommitTimerRef = useRef(null)
   const pendingCommitNoteIdRef = useRef(null)
   const pendingCommitValueRef = useRef(null)
-  const activeNoteIdRef = useRef('note-1')
+  const activeNoteIdRef = useRef(activeNoteId)
+  const storageErrorsRef = useRef(storageErrors)
 
   const activeNote = useMemo(
     () => notes.find((note) => note.id === activeNoteId) ?? notes[0] ?? null,
     [notes, activeNoteId],
   )
+
+  const storageErrorMessage = useMemo(() => {
+    if (storageErrors.notes && storageErrors.activeNoteId) {
+      return `${storageErrors.notes} ${storageErrors.activeNoteId}`
+    }
+    return storageErrors.notes || storageErrors.activeNoteId || ''
+  }, [storageErrors])
+
+  const saveStatusConfig = useMemo(() => {
+    if (saveStatus === 'saving') {
+      return {
+        label: 'Saving...',
+        className: 'border-amber-300 bg-amber-50 text-amber-800',
+      }
+    }
+    if (saveStatus === 'saved') {
+      return {
+        label: 'All changes saved',
+        className: 'border-emerald-300 bg-emerald-50 text-emerald-800',
+      }
+    }
+    if (saveStatus === 'error') {
+      return {
+        label: 'Save failed',
+        className: 'border-red-300 bg-red-50 text-red-800',
+      }
+    }
+    return {
+      label: 'Ready',
+      className: 'border-slate-300 bg-white text-slate-700',
+    }
+  }, [saveStatus])
+
+  useEffect(() => {
+    storageErrorsRef.current = storageErrors
+  }, [storageErrors])
 
   useEffect(() => {
     if (!notes.length) {
@@ -191,6 +227,48 @@ export default function App() {
     },
     [],
   )
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    setSaveStatus('saving')
+    try {
+      window.localStorage.setItem(STORAGE_KEYS.notes, JSON.stringify(notes))
+      console.debug('[storage] Saved notes to localStorage')
+      setStorageErrors((previous) => ({ ...previous, notes: '' }))
+      setSaveStatus(storageErrorsRef.current.activeNoteId ? 'error' : 'saved')
+    } catch (error) {
+      console.error('[storage] Failed to save notes to localStorage', error)
+      setStorageErrors((previous) => ({
+        ...previous,
+        notes: 'Notes could not be saved to local storage.',
+      }))
+      setSaveStatus('error')
+    }
+  }, [notes])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !activeNoteId) {
+      return
+    }
+
+    setSaveStatus('saving')
+    try {
+      window.localStorage.setItem(STORAGE_KEYS.activeNoteId, activeNoteId)
+      console.debug('[storage] Saved active note id to localStorage')
+      setStorageErrors((previous) => ({ ...previous, activeNoteId: '' }))
+      setSaveStatus(storageErrorsRef.current.notes ? 'error' : 'saved')
+    } catch (error) {
+      console.error('[storage] Failed to save active note id to localStorage', error)
+      setStorageErrors((previous) => ({
+        ...previous,
+        activeNoteId: 'The selected note could not be saved to local storage.',
+      }))
+      setSaveStatus('error')
+    }
+  }, [activeNoteId])
 
   const mobileTabClass = useMemo(
     () =>
@@ -276,8 +354,26 @@ export default function App() {
     <main className="min-h-screen bg-paper text-slate-900">
       <div className="flex min-h-screen w-full flex-col px-3 py-4 sm:px-4 lg:px-5">
         <header className="mb-4">
-          <h1 className="font-display text-2xl tracking-tight sm:text-3xl">Lite Note</h1>
-          <p className="mt-1 text-sm text-slate-700">Create notes, add emojis, and edit markdown live.</p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="font-display text-2xl tracking-tight sm:text-3xl">Lite Note</h1>
+              <p className="mt-1 text-sm text-slate-700">Create notes, add emojis, and edit markdown live.</p>
+            </div>
+            <p
+              aria-live="polite"
+              className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide ${saveStatusConfig.className}`}
+            >
+              {saveStatusConfig.label}
+            </p>
+          </div>
+          {storageErrorMessage && (
+            <p
+              role="alert"
+              className="mt-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-800"
+            >
+              {storageErrorMessage}
+            </p>
+          )}
         </header>
 
         <section className="flex min-h-0 flex-1 gap-4">
