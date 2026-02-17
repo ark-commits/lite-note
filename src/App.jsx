@@ -58,6 +58,8 @@ export default function App() {
   const [draftContent, setDraftContent] = useState(starterMarkdown)
   const [isSyncing, setIsSyncing] = useState(false)
   const pendingCommitTimerRef = useRef(null)
+  const pendingCommitNoteIdRef = useRef(null)
+  const pendingCommitValueRef = useRef(null)
   const activeNoteIdRef = useRef('note-1')
 
   const activeNote = useMemo(
@@ -79,7 +81,36 @@ export default function App() {
     activeNoteIdRef.current = activeNoteId
   }, [activeNoteId])
 
+  const commitDraftToNote = (noteId, value) => {
+    setNotes((previousNotes) =>
+      previousNotes.map((note) => (note.id === noteId ? { ...note, content: value } : note)),
+    )
+    setIsSyncing(false)
+  }
+
+  const flushPendingCommit = () => {
+    if (!pendingCommitTimerRef.current) {
+      return
+    }
+
+    clearTimeout(pendingCommitTimerRef.current)
+    pendingCommitTimerRef.current = null
+
+    const noteIdToUpdate = pendingCommitNoteIdRef.current
+    const valueToCommit = pendingCommitValueRef.current
+    pendingCommitNoteIdRef.current = null
+    pendingCommitValueRef.current = null
+
+    if (noteIdToUpdate === null || valueToCommit === null) {
+      setIsSyncing(false)
+      return
+    }
+
+    commitDraftToNote(noteIdToUpdate, valueToCommit)
+  }
+
   useEffect(() => {
+    flushPendingCommit()
     setDraftContent(activeNote?.content ?? '')
   }, [activeNote?.id])
 
@@ -88,6 +119,9 @@ export default function App() {
       if (pendingCommitTimerRef.current) {
         clearTimeout(pendingCommitTimerRef.current)
       }
+      pendingCommitTimerRef.current = null
+      pendingCommitNoteIdRef.current = null
+      pendingCommitValueRef.current = null
     },
     [],
   )
@@ -106,6 +140,7 @@ export default function App() {
   }
 
   const handleSelectNote = (noteId) => {
+    flushPendingCommit()
     setActiveNoteId(noteId)
     const selectedNote = notes.find((note) => note.id === noteId)
     setDraftContent(selectedNote?.content ?? '')
@@ -121,15 +156,14 @@ export default function App() {
     }
 
     const noteIdToUpdate = activeNoteIdRef.current
+    pendingCommitNoteIdRef.current = noteIdToUpdate
+    pendingCommitValueRef.current = value
 
     pendingCommitTimerRef.current = setTimeout(() => {
-      setNotes((previousNotes) =>
-        previousNotes.map((note) =>
-          note.id === noteIdToUpdate ? { ...note, content: value } : note,
-        ),
-      )
-      setIsSyncing(false)
+      commitDraftToNote(noteIdToUpdate, value)
       pendingCommitTimerRef.current = null
+      pendingCommitNoteIdRef.current = null
+      pendingCommitValueRef.current = null
     }, commitDelayMs)
   }
 
