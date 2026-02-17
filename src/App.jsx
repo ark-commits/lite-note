@@ -173,6 +173,8 @@ export default function App() {
       return
     }
 
+    flushPendingCommit()
+
     const createdNote = {
       id: createNoteId(),
       title: trimmedTitle,
