@@ -81,7 +81,7 @@ export default function App() {
 
   useEffect(() => {
     setDraftContent(activeNote?.content ?? '')
-  }, [activeNote?.id, activeNote?.content])
+  }, [activeNote?.id])
 
   useEffect(
     () => () => {
@@ -120,10 +120,12 @@ export default function App() {
       clearTimeout(pendingCommitTimerRef.current)
     }
 
+    const noteIdToUpdate = activeNoteIdRef.current
+
     pendingCommitTimerRef.current = setTimeout(() => {
       setNotes((previousNotes) =>
         previousNotes.map((note) =>
-          note.id === activeNoteIdRef.current ? { ...note, content: value } : note,
+          note.id === noteIdToUpdate ? { ...note, content: value } : note,
         ),
       )
       setIsSyncing(false)
