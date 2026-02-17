@@ -73,13 +73,11 @@ export default function App() {
     }
     const hasActive = notes.some((note) => note.id === activeNoteId)
     if (!hasActive) {
-      setActiveNoteId(notes[0].id)
+      const nextActiveNoteId = notes[0].id
+      setActiveNoteId(nextActiveNoteId)
+      activeNoteIdRef.current = nextActiveNoteId
     }
   }, [notes, activeNoteId])
-
-  useEffect(() => {
-    activeNoteIdRef.current = activeNoteId
-  }, [activeNoteId])
 
   const commitDraftToNote = (noteId, value) => {
     setNotes((previousNotes) =>
@@ -142,6 +140,7 @@ export default function App() {
   const handleSelectNote = (noteId) => {
     flushPendingCommit()
     setActiveNoteId(noteId)
+    activeNoteIdRef.current = noteId
     const selectedNote = notes.find((note) => note.id === noteId)
     setDraftContent(selectedNote?.content ?? '')
     setIsMobileNotesOpen(false)
@@ -185,6 +184,7 @@ export default function App() {
 
     setNotes((previousNotes) => [...previousNotes, createdNote])
     setActiveNoteId(createdNote.id)
+    activeNoteIdRef.current = createdNote.id
     setDraftContent(createdNote.content)
     setActiveMobileTab('edit')
     setNewNoteTitle('')
