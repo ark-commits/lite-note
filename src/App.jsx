@@ -37,17 +37,77 @@ function hello() {
 | Paragraph | Text |
 `
 
+const STORAGE_KEYS = {
+  notes: 'lite-note:notes:v1',
+  activeNoteId: 'lite-note:activeNoteId:v1',
+}
+
+const createDefaultNote = () => ({
+  id: 'note-1',
+  title: 'Lite Note',
+  emoji: '📝',
+  content: starterMarkdown,
+  createdAt: Date.now(),
+})
+
+const isValidNote = (note) =>
+  note &&
+  typeof note === 'object' &&
+  typeof note.id === 'string' &&
+  note.id.trim().length > 0 &&
+  typeof note.title === 'string' &&
+  typeof note.emoji === 'string' &&
+  typeof note.content === 'string' &&
+  typeof note.createdAt === 'number' &&
+  Number.isFinite(note.createdAt)
+
+const normalizeNotes = (value) => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value.filter((note) => isValidNote(note))
+}
+
+const readStoredNotes = () => {
+  if (typeof window === 'undefined') {
+    return [createDefaultNote()]
+  }
+
+  try {
+    const storedNotes = window.localStorage.getItem(STORAGE_KEYS.notes)
+    if (!storedNotes) {
+      return [createDefaultNote()]
+    }
+
+    const parsedNotes = JSON.parse(storedNotes)
+    const validNotes = normalizeNotes(parsedNotes)
+    return validNotes.length ? validNotes : [createDefaultNote()]
+  } catch {
+    return [createDefaultNote()]
+  }
+}
+
+const readStoredActiveNoteId = (notes) => {
+  if (typeof window === 'undefined') {
+    return notes[0]?.id ?? ''
+  }
+
+  try {
+    const storedActiveNoteId = window.localStorage.getItem(STORAGE_KEYS.activeNoteId)
+    if (!storedActiveNoteId) {
+      return notes[0]?.id ?? ''
+    }
+
+    const activeNoteExists = notes.some((note) => note.id === storedActiveNoteId)
+    return activeNoteExists ? storedActiveNoteId : notes[0]?.id ?? ''
+  } catch {
+    return notes[0]?.id ?? ''
+  }
+}
+
 export default function App() {
-  const [notes, setNotes] = useState(() => [
-    {
-      id: 'note-1',
-      title: 'Lite Note',
-      emoji: '📝',
-      content: starterMarkdown,
-      createdAt: Date.now(),
-    },
-  ])
-  const [activeNoteId, setActiveNoteId] = useState('note-1')
+  const [notes, setNotes] = useState(readStoredNotes)
+  const [activeNoteId, setActiveNoteId] = useState(() => readStoredActiveNoteId(notes))
   const [activeMobileTab, setActiveMobileTab] = useState('edit')
   const [isCreatingNote, setIsCreatingNote] = useState(false)
   const [newNoteTitle, setNewNoteTitle] = useState('')
@@ -69,6 +129,26 @@ export default function App() {
       setActiveNoteId(notes[0].id)
     }
   }, [notes, activeNoteId])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    try {
+      window.localStorage.setItem(STORAGE_KEYS.notes, JSON.stringify(notes))
+    } catch {}
+  }, [notes])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !activeNoteId) {
+      return
+    }
+
+    try {
+      window.localStorage.setItem(STORAGE_KEYS.activeNoteId, activeNoteId)
+    } catch {}
+  }, [activeNoteId])
 
   const mobileTabClass = useMemo(
     () =>
