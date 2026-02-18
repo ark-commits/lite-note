@@ -38,19 +38,46 @@ function hello() {
 `
 
 const STORAGE_KEYS = {
-  notes: 'lite-note:notes:v1',
+  notesV1: 'lite-note:notes:v1',
+  notesV2: 'lite-note:notes:v2',
   activeNoteId: 'lite-note:activeNoteId:v1',
 }
 
-const createDefaultNote = () => ({
-  id: 'note-1',
-  title: 'Lite Note',
-  emoji: '📝',
-  content: starterMarkdown,
-  createdAt: Date.now(),
-})
+const generateNoteId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
 
-const isValidNote = (note) =>
+const createDefaultNote = (overrides = {}) => {
+  const now = Date.now()
+  return {
+    id: 'note-1',
+    title: 'Lite Note',
+    emoji: '📝',
+    content: starterMarkdown,
+    createdAt: now,
+    updatedAt: now,
+    isPinned: false,
+    ...overrides,
+  }
+}
+
+const createBlankNote = (title = 'Untitled Note', emoji = '📝') => {
+  const now = Date.now()
+  return {
+    id: generateNoteId(),
+    title,
+    emoji,
+    content: `# ${title}\n\n`,
+    createdAt: now,
+    updatedAt: now,
+    isPinned: false,
+  }
+}
+
+const isBaseNote = (note) =>
   note &&
   typeof note === 'object' &&
   typeof note.id === 'string' &&
@@ -65,7 +92,31 @@ const normalizeNotes = (value) => {
   if (!Array.isArray(value)) {
     return []
   }
-  return value.filter((note) => isValidNote(note))
+
+  return value.filter((note) => isBaseNote(note)).map((note) => ({
+    ...note,
+    updatedAt:
+      typeof note.updatedAt === 'number' && Number.isFinite(note.updatedAt) ? note.updatedAt : note.createdAt,
+    isPinned: typeof note.isPinned === 'boolean' ? note.isPinned : false,
+  }))
+}
+
+const readNotesFromKey = (key) => {
+  if (typeof window === 'undefined') {
+    return []
+  }
+
+  try {
+    const storedNotes = window.localStorage.getItem(key)
+    if (!storedNotes) {
+      return []
+    }
+
+    const parsedNotes = JSON.parse(storedNotes)
+    return normalizeNotes(parsedNotes)
+  } catch {
+    return []
+  }
 }
 
 const readStoredNotes = () => {
@@ -73,18 +124,17 @@ const readStoredNotes = () => {
     return [createDefaultNote()]
   }
 
-  try {
-    const storedNotes = window.localStorage.getItem(STORAGE_KEYS.notes)
-    if (!storedNotes) {
-      return [createDefaultNote()]
-    }
-
-    const parsedNotes = JSON.parse(storedNotes)
-    const validNotes = normalizeNotes(parsedNotes)
-    return validNotes.length ? validNotes : [createDefaultNote()]
-  } catch {
-    return [createDefaultNote()]
+  const v2Notes = readNotesFromKey(STORAGE_KEYS.notesV2)
+  if (v2Notes.length) {
+    return v2Notes
   }
+
+  const v1Notes = readNotesFromKey(STORAGE_KEYS.notesV1)
+  if (v1Notes.length) {
+    return v1Notes
+  }
+
+  return [createDefaultNote()]
 }
 
 const readStoredActiveNoteId = (notes) => {
@@ -113,6 +163,7 @@ export default function App() {
   const [isCreatingNote, setIsCreatingNote] = useState(false)
   const [newNoteTitle, setNewNoteTitle] = useState('')
   const [newNoteEmoji, setNewNoteEmoji] = useState('📝')
+  const [searchQuery, setSearchQuery] = useState('')
   const [isMobileNotesOpen, setIsMobileNotesOpen] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [draftContent, setDraftContent] = useState(
@@ -134,6 +185,28 @@ export default function App() {
     () => notes.find((note) => note.id === activeNoteId) ?? notes[0] ?? null,
     [notes, activeNoteId],
   )
+
+  const normalizedSearchQuery = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery])
+
+  const visibleNotes = useMemo(() => {
+    const sortedNotes = [...notes].sort((a, b) => {
+      if (normalizedSearchQuery) {
+        return b.updatedAt - a.updatedAt
+      }
+
+      if (a.isPinned !== b.isPinned) {
+        return a.isPinned ? -1 : 1
+      }
+
+      return b.updatedAt - a.updatedAt
+    })
+
+    if (!normalizedSearchQuery) {
+      return sortedNotes
+    }
+
+    return sortedNotes.filter((note) => note.title.toLowerCase().includes(normalizedSearchQuery))
+  }, [notes, normalizedSearchQuery])
 
   const storageErrorMessage = useMemo(() => {
     if (storageErrors.notes && storageErrors.activeNoteId) {
@@ -175,6 +248,7 @@ export default function App() {
     if (!notes.length) {
       return
     }
+
     const hasActive = notes.some((note) => note.id === activeNoteId)
     if (!hasActive) {
       const nextActiveNoteId = notes[0].id
@@ -185,7 +259,15 @@ export default function App() {
 
   const commitDraftToNote = (noteId, value) => {
     setNotes((previousNotes) =>
-      previousNotes.map((note) => (note.id === noteId ? { ...note, content: value } : note)),
+      previousNotes.map((note) => {
+        if (note.id !== noteId) {
+          return note
+        }
+        if (note.content === value) {
+          return note
+        }
+        return { ...note, content: value, updatedAt: Date.now() }
+      }),
     )
     setIsSyncing(false)
   }
@@ -235,7 +317,7 @@ export default function App() {
 
     setSaveStatus('saving')
     try {
-      window.localStorage.setItem(STORAGE_KEYS.notes, JSON.stringify(notes))
+      window.localStorage.setItem(STORAGE_KEYS.notesV2, JSON.stringify(notes))
       console.debug('[storage] Saved notes to localStorage')
       setStorageErrors((previous) => ({ ...previous, notes: '' }))
       setSaveStatus(storageErrorsRef.current.activeNoteId ? 'error' : 'saved')
@@ -276,12 +358,7 @@ export default function App() {
     [],
   )
 
-  const createNoteId = () => {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      return crypto.randomUUID()
-    }
-    return `note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  }
+  const createNoteId = () => generateNoteId()
 
   const handleSelectNote = (noteId) => {
     if (noteId === activeNoteId || noteId === activeNoteIdRef.current) {
@@ -325,12 +402,15 @@ export default function App() {
 
     flushPendingCommit()
 
+    const now = Date.now()
     const createdNote = {
       id: createNoteId(),
       title: trimmedTitle,
       emoji: newNoteEmoji || '📝',
       content: `# ${trimmedTitle}\n\n`,
-      createdAt: Date.now(),
+      createdAt: now,
+      updatedAt: now,
+      isPinned: false,
     }
 
     setNotes((previousNotes) => [...previousNotes, createdNote])
@@ -348,6 +428,92 @@ export default function App() {
     setIsCreatingNote(false)
     setNewNoteTitle('')
     setNewNoteEmoji('📝')
+  }
+
+  const handleSearchChange = (value) => {
+    setSearchQuery(value)
+  }
+
+  const handleRenameNote = (noteId, nextTitle) => {
+    const trimmedTitle = nextTitle.trim()
+    if (!trimmedTitle) {
+      return
+    }
+
+    flushPendingCommit()
+
+    setNotes((previousNotes) =>
+      previousNotes.map((note) =>
+        note.id === noteId ? { ...note, title: trimmedTitle, updatedAt: Date.now() } : note,
+      ),
+    )
+  }
+
+  const handleDeleteNote = (noteId) => {
+    flushPendingCommit()
+
+    setNotes((previousNotes) => {
+      const noteIndex = previousNotes.findIndex((note) => note.id === noteId)
+      if (noteIndex < 0) {
+        return previousNotes
+      }
+
+      const nextNotes = previousNotes.filter((note) => note.id !== noteId)
+
+      if (!nextNotes.length) {
+        const fallbackNote = createBlankNote()
+        setActiveNoteId(fallbackNote.id)
+        activeNoteIdRef.current = fallbackNote.id
+        setDraftContent(fallbackNote.content)
+        return [fallbackNote]
+      }
+
+      if (activeNoteIdRef.current === noteId) {
+        const nextActiveIndex = Math.max(0, noteIndex - 1)
+        const nextActiveNote = nextNotes[nextActiveIndex] ?? nextNotes[0]
+        setActiveNoteId(nextActiveNote.id)
+        activeNoteIdRef.current = nextActiveNote.id
+        setDraftContent(nextActiveNote.content)
+      }
+
+      return nextNotes
+    })
+  }
+
+  const handleDuplicateNote = (noteId) => {
+    flushPendingCommit()
+
+    const sourceNote = notes.find((note) => note.id === noteId)
+    if (!sourceNote) {
+      return
+    }
+
+    const now = Date.now()
+    const duplicatedNote = {
+      ...sourceNote,
+      id: createNoteId(),
+      title: `${sourceNote.title} Copy`,
+      createdAt: now,
+      updatedAt: now,
+      isPinned: false,
+    }
+
+    setNotes((previousNotes) => [...previousNotes, duplicatedNote])
+    setActiveNoteId(duplicatedNote.id)
+    activeNoteIdRef.current = duplicatedNote.id
+    setDraftContent(duplicatedNote.content)
+    setActiveMobileTab('edit')
+    setIsMobileNotesOpen(false)
+  }
+
+  const handleTogglePin = (noteId) => {
+    flushPendingCommit()
+
+    setNotes((previousNotes) =>
+      previousNotes.map((note) =>
+        note.id === noteId ? { ...note, isPinned: !note.isPinned, updatedAt: Date.now() } : note,
+      ),
+    )
   }
 
   return (
@@ -377,10 +543,12 @@ export default function App() {
         </header>
 
         <section className="flex min-h-0 flex-1 gap-4">
-          <aside className={`hidden shrink-0 transition-all md:block ${isSidebarCollapsed ? 'w-16' : 'w-72'}`}>
+          <aside className={`hidden shrink-0 transition-all md:block ${isSidebarCollapsed ? 'w-16' : 'w-80'}`}>
             <NotesSidebar
-              notes={notes}
+              notes={visibleNotes}
               activeNoteId={activeNote?.id ?? ''}
+              searchQuery={searchQuery}
+              onSearchChange={handleSearchChange}
               onSelectNote={handleSelectNote}
               isCreatingNote={isCreatingNote}
               onStartCreate={() => setIsCreatingNote(true)}
@@ -390,6 +558,10 @@ export default function App() {
               onPickEmoji={setNewNoteEmoji}
               onCancelCreate={handleCancelCreateNote}
               onConfirmCreate={handleConfirmCreateNote}
+              onRenameNote={handleRenameNote}
+              onDeleteNote={handleDeleteNote}
+              onDuplicateNote={handleDuplicateNote}
+              onTogglePin={handleTogglePin}
               collapsed={isSidebarCollapsed}
               onToggleCollapse={() => setIsSidebarCollapsed((previous) => !previous)}
             />
@@ -467,8 +639,10 @@ export default function App() {
           }`}
         >
           <NotesSidebar
-            notes={notes}
+            notes={visibleNotes}
             activeNoteId={activeNote?.id ?? ''}
+            searchQuery={searchQuery}
+            onSearchChange={handleSearchChange}
             onSelectNote={handleSelectNote}
             isCreatingNote={isCreatingNote}
             onStartCreate={() => setIsCreatingNote(true)}
@@ -478,6 +652,10 @@ export default function App() {
             onPickEmoji={setNewNoteEmoji}
             onCancelCreate={handleCancelCreateNote}
             onConfirmCreate={handleConfirmCreateNote}
+            onRenameNote={handleRenameNote}
+            onDeleteNote={handleDeleteNote}
+            onDuplicateNote={handleDuplicateNote}
+            onTogglePin={handleTogglePin}
           />
         </div>
       </div>
