@@ -37,6 +37,8 @@ function hello() {
 | Paragraph | Text |
 `
 
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60
+
 const STORAGE_KEYS = {
   notesV1: 'lite-note:notes:v1',
   notesV2: 'lite-note:notes:v2',
@@ -60,6 +62,7 @@ const createDefaultNote = (overrides = {}) => {
     createdAt: now,
     updatedAt: now,
     isPinned: false,
+    deletedAt: null,
     ...overrides,
   }
 }
@@ -74,6 +77,7 @@ const createBlankNote = (title = 'Untitled Note', emoji = '📝') => {
     createdAt: now,
     updatedAt: now,
     isPinned: false,
+    deletedAt: null,
   }
 }
 
@@ -98,6 +102,7 @@ const normalizeNotes = (value) => {
     updatedAt:
       typeof note.updatedAt === 'number' && Number.isFinite(note.updatedAt) ? note.updatedAt : note.createdAt,
     isPinned: typeof note.isPinned === 'boolean' ? note.isPinned : false,
+    deletedAt: typeof note.deletedAt === 'number' ? note.deletedAt : null,
   }))
 }
 
@@ -166,6 +171,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [isMobileNotesOpen, setIsMobileNotesOpen] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [isTrashOpen, setIsTrashOpen] = useState(false)
   const [draftContent, setDraftContent] = useState(
     () => notes.find((note) => note.id === activeNoteId)?.content ?? notes[0]?.content ?? '',
   )
@@ -188,8 +194,13 @@ export default function App() {
 
   const normalizedSearchQuery = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery])
 
+  const trashedNotes = useMemo(
+    () => notes.filter((note) => note.deletedAt !== null).sort((a, b) => b.deletedAt - a.deletedAt),
+    [notes],
+  )
+
   const visibleNotes = useMemo(() => {
-    const sortedNotes = [...notes].sort((a, b) => {
+    const sortedNotes = notes.filter((note) => note.deletedAt === null).sort((a, b) => {
       if (normalizedSearchQuery) {
         return b.updatedAt - a.updatedAt
       }
@@ -315,6 +326,11 @@ export default function App() {
   )
 
   useEffect(() => {
+    const cutoff = Date.now() - THIRTY_DAYS_MS
+    setNotes((previousNotes) => previousNotes.filter((note) => note.deletedAt === null || note.deletedAt > cutoff))
+  }, [])
+
+  useEffect(() => {
     if (typeof window === 'undefined') {
       return
     }
@@ -415,6 +431,7 @@ export default function App() {
       createdAt: now,
       updatedAt: now,
       isPinned: false,
+      deletedAt: null,
     }
 
     setNotes((previousNotes) => [...previousNotes, createdNote])
@@ -456,32 +473,39 @@ export default function App() {
   const handleDeleteNote = (noteId) => {
     flushPendingCommit()
 
-    setNotes((previousNotes) => {
-      const noteIndex = previousNotes.findIndex((note) => note.id === noteId)
-      if (noteIndex < 0) {
-        return previousNotes
-      }
+    const liveNotes = notes.filter((note) => note.deletedAt === null && note.id !== noteId)
 
-      const nextNotes = previousNotes.filter((note) => note.id !== noteId)
+    if (!liveNotes.length) {
+      const fallbackNote = createBlankNote()
+      setNotes((previousNotes) =>
+        previousNotes.map((note) => (note.id === noteId ? { ...note, deletedAt: Date.now() } : note)).concat(fallbackNote),
+      )
+      setActiveNoteId(fallbackNote.id)
+      activeNoteIdRef.current = fallbackNote.id
+      setDraftContent(fallbackNote.content)
+      return
+    }
 
-      if (!nextNotes.length) {
-        const fallbackNote = createBlankNote()
-        setActiveNoteId(fallbackNote.id)
-        activeNoteIdRef.current = fallbackNote.id
-        setDraftContent(fallbackNote.content)
-        return [fallbackNote]
-      }
+    if (activeNoteIdRef.current === noteId) {
+      const nextActiveNote = liveNotes[0]
+      setActiveNoteId(nextActiveNote.id)
+      activeNoteIdRef.current = nextActiveNote.id
+      setDraftContent(nextActiveNote.content)
+    }
 
-      if (activeNoteIdRef.current === noteId) {
-        const nextActiveIndex = Math.max(0, noteIndex - 1)
-        const nextActiveNote = nextNotes[nextActiveIndex] ?? nextNotes[0]
-        setActiveNoteId(nextActiveNote.id)
-        activeNoteIdRef.current = nextActiveNote.id
-        setDraftContent(nextActiveNote.content)
-      }
+    setNotes((previousNotes) =>
+      previousNotes.map((note) => (note.id === noteId ? { ...note, deletedAt: Date.now() } : note)),
+    )
+  }
 
-      return nextNotes
-    })
+  const handleRestoreNote = (noteId) => {
+    setNotes((previousNotes) =>
+      previousNotes.map((note) => (note.id === noteId ? { ...note, deletedAt: null } : note)),
+    )
+  }
+
+  const handlePermanentDeleteNote = (noteId) => {
+    setNotes((previousNotes) => previousNotes.filter((note) => note.id !== noteId))
   }
 
   const handleDuplicateNote = (noteId) => {
@@ -566,6 +590,11 @@ export default function App() {
               onDeleteNote={handleDeleteNote}
               onDuplicateNote={handleDuplicateNote}
               onTogglePin={handleTogglePin}
+              trashedNotes={trashedNotes}
+              isTrashOpen={isTrashOpen}
+              onToggleTrash={() => setIsTrashOpen((previous) => !previous)}
+              onRestoreNote={handleRestoreNote}
+              onPermanentDeleteNote={handlePermanentDeleteNote}
               collapsed={isSidebarCollapsed}
               onToggleCollapse={() => setIsSidebarCollapsed((previous) => !previous)}
             />
@@ -660,6 +689,11 @@ export default function App() {
             onDeleteNote={handleDeleteNote}
             onDuplicateNote={handleDuplicateNote}
             onTogglePin={handleTogglePin}
+            trashedNotes={trashedNotes}
+            isTrashOpen={isTrashOpen}
+            onToggleTrash={() => setIsTrashOpen((previous) => !previous)}
+            onRestoreNote={handleRestoreNote}
+            onPermanentDeleteNote={handlePermanentDeleteNote}
           />
         </div>
       </div>

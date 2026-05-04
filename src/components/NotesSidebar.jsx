@@ -1,5 +1,19 @@
 const emojiOptions = ['📝', '📌', '✅', '💡', '🚀', '📚', '🧠', '📎', '✨', '🔥']
 
+const formatDeletedAt = (timestamp) => {
+  if (typeof timestamp !== 'number' || !Number.isFinite(timestamp)) {
+    return ''
+  }
+  const diffMs = Math.max(0, Date.now() - timestamp)
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+  if (diffMs < minute) return 'Deleted just now'
+  if (diffMs < hour) return `Deleted ${Math.floor(diffMs / minute)}m ago`
+  if (diffMs < day) return `Deleted ${Math.floor(diffMs / hour)}h ago`
+  return `Deleted ${Math.floor(diffMs / day)}d ago`
+}
+
 const formatEditedAt = (timestamp) => {
   if (typeof timestamp !== 'number' || !Number.isFinite(timestamp)) {
     return ''
@@ -40,6 +54,11 @@ export default function NotesSidebar({
   onDeleteNote,
   onDuplicateNote,
   onTogglePin,
+  trashedNotes = [],
+  isTrashOpen = false,
+  onToggleTrash,
+  onRestoreNote,
+  onPermanentDeleteNote,
   collapsed = false,
   onToggleCollapse,
 }) {
@@ -232,6 +251,70 @@ export default function NotesSidebar({
           </li>
         )}
       </ul>
+
+      {!collapsed && (
+        <div className="border-t border-slate-200">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 transition hover:bg-slate-50"
+            onClick={onToggleTrash}
+            aria-expanded={isTrashOpen}
+          >
+            <span>Trash</span>
+            <span className="flex items-center gap-1.5">
+              {trashedNotes.length > 0 && (
+                <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                  {trashedNotes.length}
+                </span>
+              )}
+              <span>{isTrashOpen ? '▲' : '▼'}</span>
+            </span>
+          </button>
+
+          {isTrashOpen && (
+            <ul className="space-y-1 border-t border-slate-100 p-2">
+              {trashedNotes.length === 0 && (
+                <li className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
+                  Trash is empty.
+                </li>
+              )}
+              {trashedNotes.map((note) => (
+                <li key={note.id}>
+                  <div className="rounded-lg border border-transparent bg-white px-2 py-2 hover:bg-slate-50">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base opacity-50" aria-hidden="true">
+                        {note.emoji}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-slate-500 line-through">{note.title}</p>
+                        <p className="truncate text-xs text-slate-400">{formatDeletedAt(note.deletedAt)}</p>
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          className="rounded bg-emerald-100 px-1.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 transition hover:bg-emerald-200"
+                          onClick={() => onRestoreNote(note.id)}
+                          aria-label={`Restore ${note.title}`}
+                        >
+                          Restore
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded bg-red-100 px-1.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-red-700 transition hover:bg-red-200"
+                          onClick={() => onPermanentDeleteNote(note.id)}
+                          aria-label={`Permanently delete ${note.title}`}
+                        >
+                          Delete Forever
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   )
 }
