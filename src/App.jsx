@@ -205,7 +205,11 @@ export default function App() {
       return sortedNotes
     }
 
-    return sortedNotes.filter((note) => note.title.toLowerCase().includes(normalizedSearchQuery))
+    return sortedNotes.filter(
+      (note) =>
+        note.title.toLowerCase().includes(normalizedSearchQuery) ||
+        note.content.toLowerCase().includes(searchQuery),
+    )
   }, [notes, normalizedSearchQuery])
 
   const storageErrorMessage = useMemo(() => {
