@@ -48,6 +48,7 @@ const createDefaultNote = () => ({
   emoji: '📝',
   content: starterMarkdown,
   createdAt: Date.now(),
+  tags: [],
 })
 
 const isValidNote = (note) =>
@@ -65,7 +66,10 @@ const normalizeNotes = (value) => {
   if (!Array.isArray(value)) {
     return []
   }
-  return value.filter((note) => isValidNote(note))
+  return value.filter((note) => isValidNote(note)).map((note) => ({
+    ...note,
+    tags: Array.isArray(note.tags) ? note.tags.filter((t) => typeof t === 'string') : [],
+  }))
 }
 
 const readStoredNotes = () => {
@@ -115,6 +119,7 @@ export default function App() {
   const [newNoteEmoji, setNewNoteEmoji] = useState('📝')
   const [isMobileNotesOpen, setIsMobileNotesOpen] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [activeTags, setActiveTags] = useState([])
   const [draftContent, setDraftContent] = useState(
     () => notes.find((note) => note.id === activeNoteId)?.content ?? notes[0]?.content ?? '',
   )
@@ -134,6 +139,16 @@ export default function App() {
     () => notes.find((note) => note.id === activeNoteId) ?? notes[0] ?? null,
     [notes, activeNoteId],
   )
+
+  const allTags = useMemo(
+    () => [...new Set(notes.flatMap((note) => note.tags))].sort(),
+    [notes],
+  )
+
+  const visibleNotes = useMemo(() => {
+    if (activeTags.length === 0) return notes
+    return notes.filter((note) => activeTags.every((tag) => note.tags.includes(tag)))
+  }, [notes])
 
   const storageErrorMessage = useMemo(() => {
     if (storageErrors.notes && storageErrors.activeNoteId) {
@@ -331,6 +346,7 @@ export default function App() {
       emoji: newNoteEmoji || '📝',
       content: `# ${trimmedTitle}\n\n`,
       createdAt: Date.now(),
+      tags: [],
     }
 
     setNotes((previousNotes) => [...previousNotes, createdNote])
@@ -348,6 +364,32 @@ export default function App() {
     setIsCreatingNote(false)
     setNewNoteTitle('')
     setNewNoteEmoji('📝')
+  }
+
+  const handleAddTag = (noteId, rawTag) => {
+    const tag = rawTag.trim().toLowerCase()
+    if (!tag) return
+    setNotes((previousNotes) =>
+      previousNotes.map((note) => {
+        if (note.id !== noteId) return note
+        if (note.tags.includes(rawTag)) return note
+        return { ...note, tags: [...note.tags, tag] }
+      }),
+    )
+  }
+
+  const handleRemoveTag = (noteId, tag) => {
+    setNotes((previousNotes) =>
+      previousNotes.map((note) =>
+        note.id === noteId ? { ...note, tags: note.tags.filter((t) => t !== tag) } : note,
+      ),
+    )
+  }
+
+  const handleToggleTagFilter = (tag) => {
+    setActiveTags((previous) =>
+      previous.includes(tag) ? previous.filter((t) => t !== tag) : [...previous, tag],
+    )
   }
 
   return (
@@ -379,7 +421,7 @@ export default function App() {
         <section className="flex min-h-0 flex-1 gap-4">
           <aside className={`hidden shrink-0 transition-all md:block ${isSidebarCollapsed ? 'w-16' : 'w-72'}`}>
             <NotesSidebar
-              notes={notes}
+              notes={visibleNotes}
               activeNoteId={activeNote?.id ?? ''}
               onSelectNote={handleSelectNote}
               isCreatingNote={isCreatingNote}
@@ -390,6 +432,11 @@ export default function App() {
               onPickEmoji={setNewNoteEmoji}
               onCancelCreate={handleCancelCreateNote}
               onConfirmCreate={handleConfirmCreateNote}
+              allTags={allTags}
+              activeTags={activeTags}
+              onToggleTagFilter={handleToggleTagFilter}
+              onAddTag={handleAddTag}
+              onRemoveTag={handleRemoveTag}
               collapsed={isSidebarCollapsed}
               onToggleCollapse={() => setIsSidebarCollapsed((previous) => !previous)}
             />
@@ -467,7 +514,7 @@ export default function App() {
           }`}
         >
           <NotesSidebar
-            notes={notes}
+            notes={visibleNotes}
             activeNoteId={activeNote?.id ?? ''}
             onSelectNote={handleSelectNote}
             isCreatingNote={isCreatingNote}
@@ -478,6 +525,11 @@ export default function App() {
             onPickEmoji={setNewNoteEmoji}
             onCancelCreate={handleCancelCreateNote}
             onConfirmCreate={handleConfirmCreateNote}
+            allTags={allTags}
+            activeTags={activeTags}
+            onToggleTagFilter={handleToggleTagFilter}
+            onAddTag={handleAddTag}
+            onRemoveTag={handleRemoveTag}
           />
         </div>
       </div>
