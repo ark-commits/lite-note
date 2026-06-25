@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import EditorPane from './components/EditorPane'
 import NotesSidebar from './components/NotesSidebar'
 import PreviewPane from './components/PreviewPane'
+import NoteAiSummary from './components/NoteAiSummary'
 
 const starterMarkdown = `# Lite Note
 
@@ -447,6 +448,10 @@ export default function App() {
                 <PreviewPane content={draftContent} />
               </div>
             </section>
+
+            <div className="mt-4">
+              <NoteAiSummary note={activeNote} />
+            </div>
           </div>
         </section>
       </div>
