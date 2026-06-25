@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+reviews:
+  poem: false
+  path_instructions:
+    - path: '**/*'
+      instructions: |
+        Perform a balanced code review that combines strong issue coverage with practical signal quality.
+
+        Review the PR like a careful human reviewer. Try to find important issues across correctness,
+        maintainability, testing, security, and code quality, while avoiding excessive noise.
+
+        Cover the following categories:
+
+        1. Bugs & Correctness
+           - logical errors
+           - null/undefined handling
+           - edge cases
+           - incorrect assumptions
+           - state handling issues
+
+        2. Risk & Breaking Changes
+           - backward compatibility concerns
+           - contract changes
+           - unintended side effects
+
+        3. Code Quality & Maintainability
+           - duplication
+           - dead code
+           - avoidable complexity
+           - poor naming
+           - decomposition opportunities when they materially improve readability
+
+        4. Testing
+           - missing tests
+           - weak assertions
+           - missing edge-case coverage
+
+        5. Security & Performance
+           - unsafe patterns
+           - obvious performance issues
+           - redundant work in hot paths
+           - unsafe, vulnerable dependencies
+           - exposed secrets
+
+        6. Style & Consistency
+           - only mention style or spelling issues when they reduce clarity or violate established conventions
+
+        Output requirements:
+        - Report meaningful findings with explanation and suggested fix.
+        - Group or label comments by theme when useful.
+        - Avoid excessive nitpicks.
+
+        Remember:
+        Aim for a practical middle ground: strong coverage without overwhelming the author.
+
+issue_enrichment:
+  planning:
+    enabled: false
